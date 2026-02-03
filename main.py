@@ -2,6 +2,22 @@ import math
 import random
 import sys
 import pygame
+from pathlib import Path
+
+def resource_path(relative: str) -> str:
+    """
+    Get absolute path to resource, works for dev and for PyInstaller one-folder builds.
+    In one-folder builds, PyInstaller may place data files under _internal/.
+    """
+    if getattr(sys, "frozen", False):
+        base = Path(sys.executable).resolve().parent  # dist\PyGorillas
+        # If assets are bundled under _internal, use that as the base
+        if (base / "_internal").exists():
+            base = base / "_internal"
+    else:
+        base = Path(__file__).resolve().parent
+    return str(base / relative)
+
 
 def make_background(w, h, seed=1):
     rng = random.Random(seed)
@@ -66,8 +82,9 @@ banana_color = (240, 220, 90)
 
 screen = pygame.display.set_mode((screen_w, screen_h))
 pygame.display.set_caption("PyGorillas")
+pygame.display.set_icon(pygame.image.load(resource_path("assets/gorilla1.png")).convert_alpha())
 
-gorilla_img = pygame.image.load("assets/gorilla1.png").convert_alpha()
+gorilla_img = pygame.image.load(resource_path("assets/gorilla1.png")).convert_alpha()
 gorilla_scale = 0.2
 gorilla_img = pygame.transform.scale(
     gorilla_img, (gorilla_img.get_width() * gorilla_scale, gorilla_img.get_height() * gorilla_scale)  
@@ -75,14 +92,13 @@ gorilla_img = pygame.transform.scale(
 gorilla_img_1 = gorilla_img
 gorilla_img_2 = pygame.transform.flip(gorilla_img, True, False)
 
-banana_img = pygame.image.load("assets/banana1.png").convert_alpha()
+banana_img  = pygame.image.load(resource_path("assets/banana1.png")).convert_alpha()
 banana_scale = 1.0  # try 0.5 if it's big
 banana_img = pygame.transform.scale(
     banana_img,
     (int(banana_img.get_width() * banana_scale), int(banana_img.get_height() * banana_scale))
 )
 banana_radius = max(2, min(banana_img.get_width(), banana_img.get_height()) // 3)
-
 
 clock = pygame.time.Clock()
 font = pygame.font.SysFont(None, 28)
