@@ -66,6 +66,24 @@ banana_color = (240, 220, 90)
 
 screen = pygame.display.set_mode((screen_w, screen_h))
 pygame.display.set_caption("PyGorillas")
+
+gorilla_img = pygame.image.load("assets/gorilla1.png").convert_alpha()
+gorilla_scale = 0.2
+gorilla_img = pygame.transform.scale(
+    gorilla_img, (gorilla_img.get_width() * gorilla_scale, gorilla_img.get_height() * gorilla_scale)  
+)
+gorilla_img_1 = gorilla_img
+gorilla_img_2 = pygame.transform.flip(gorilla_img, True, False)
+
+banana_img = pygame.image.load("assets/banana1.png").convert_alpha()
+banana_scale = 1.0  # try 0.5 if it's big
+banana_img = pygame.transform.scale(
+    banana_img,
+    (int(banana_img.get_width() * banana_scale), int(banana_img.get_height() * banana_scale))
+)
+banana_radius = max(2, min(banana_img.get_width(), banana_img.get_height()) // 3)
+
+
 clock = pygame.time.Clock()
 font = pygame.font.SysFont(None, 28)
 big_font = pygame.font.SysFont(None, 44)
@@ -113,26 +131,30 @@ def generate_skyline():
     return buildings
 
 def place_gorillas(buildings):
-    left_building = pick_rooftop(buildings, "left")
-    right_building = pick_rooftop(buildings, "right")
+    left_b = pick_rooftop(buildings, "left")
+    right_b = pick_rooftop(buildings, "right")
 
-    # gorillas as circles
-    r = 16
+    gorilla_1_rect = gorilla_img_1.get_rect()
+    gorilla_1_rect.midbottom = (left_b.centerx, left_b.top)  # feet on roof
+
+    gorilla_2_rect = gorilla_img_2.get_rect()
+    gorilla_2_rect.midbottom = (right_b.centerx, right_b.top)
     gorilla_1 = {
-        "r": r,
-        "x": left_building.centerx,
-        "y": left_building.top - r,
-        "color": p1_color,
+        "x": gorilla_1_rect.centerx,
+        "y": gorilla_1_rect.centery,
+        "img": gorilla_img_1,
+        "rect": gorilla_1_rect,
         "name": "P1",
     }
     gorilla_2 = {
-        "r": r,
-        "x": right_building.centerx,
-        "y": right_building.top - r,
-        "color": p2_color,
+        "x": gorilla_2_rect.centerx,
+        "y": gorilla_2_rect.centery,
+        "img": gorilla_img_2,
+        "rect": gorilla_2_rect,
         "name": "P2",
     }
     return gorilla_1, gorilla_2
+
 
 # ---------- Game state ----------
 buildings = generate_skyline()
@@ -193,12 +215,15 @@ def launch_banana(a_deg, v):
     vx = dir_x * v * math.cos(a)
     vy = -v * math.sin(a)  # negative because screen y increases downward
 
+    spawn_x = shooter["rect"].centerx
+    spawn_y = shooter["rect"].top + shooter["rect"].height * 0.35
+
     banana = {
-        "x": float(shooter["x"]),
-        "y": float(shooter["y"] - shooter["r"] - 2),
+        "x": float(spawn_x),
+        "y": float(spawn_y),
         "vx": vx,
         "vy": vy,
-        "r": 6,
+        "r": banana_radius,
     }
 
 # ---------- Main loop ----------
@@ -276,13 +301,9 @@ while running:
             else:
                 # gorilla hit (simple circle-circle)
                 target = other_player()
-                dx = bx - target["x"]
-                dy = by - target["y"]
-                if dx*dx + dy*dy <= (br + target["r"])**2:
-                    # winner message, then reset
+                if circle_rect_hit(bx, by, br, target["rect"]):
                     winner = current_player()["name"]
                     reset_round(f"{winner} wins!  (Press R to reroll)")
-                    # keep message on screen for a moment
                     message_timer = 2.5
 
     # ----- Draw -----
@@ -293,12 +314,15 @@ while running:
         pygame.draw.rect(screen, building_color, b)
 
     # gorillas
-    pygame.draw.circle(screen, gorilla_1["color"], (int(gorilla_1["x"]), int(gorilla_1["y"])), gorilla_1["r"])
-    pygame.draw.circle(screen, gorilla_2["color"], (int(gorilla_2["x"]), int(gorilla_2["y"])), gorilla_2["r"])
+    screen.blit(gorilla_1["img"], gorilla_1["rect"].topleft)
+    screen.blit(gorilla_2["img"], gorilla_2["rect"].topleft)
 
     # banana
     if banana is not None and phase == "flying":
-        pygame.draw.circle(screen, banana_color, (int(banana["x"]), int(banana["y"])), banana["r"])
+        x = int(banana["x"])
+        y = int(banana["y"])
+        rect = banana_img.get_rect(center=(x, y))
+        screen.blit(banana_img, rect.topleft)
 
     # HUD / prompt
     p = current_player()
