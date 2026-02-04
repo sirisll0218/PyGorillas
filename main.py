@@ -99,11 +99,14 @@ banana_img = pygame.transform.scale(
     (int(banana_img.get_width() * banana_scale), int(banana_img.get_height() * banana_scale))
 )
 banana_radius = max(2, min(banana_img.get_width(), banana_img.get_height()) // 3)
+explode_radius = 12
+explosion_time = 0.2
 
 clock = pygame.time.Clock()
 font = pygame.font.SysFont(None, 28)
 big_font = pygame.font.SysFont(None, 44)
 background = make_background(screen_w, screen_h, seed=42)
+
 
 # ---------- Helpers ----------
 def draw_text(s, x, y, fnt=font, color=text_color):
@@ -133,6 +136,37 @@ def circle_rect_hit(cx, cy, r, rect: pygame.Rect):
     dx = cx - closest_x
     dy = cy - closest_y
     return (dx*dx + dy*dy) <= r*r
+
+def build_city_surface(buildings, w, h):
+    # Per-pixel alpha surface (transparent background)
+    city = pygame.Surface((w, h), pygame.SRCALPHA)
+    # Draw buildings onto it (opaque)
+    for b in buildings:
+        pygame.draw.rect(city, (*building_color, 255), b)
+    return city
+
+def city_solid_at(city_surface, x, y):
+    # bounds check
+    if x < 0 or x >= city_surface.get_width() or y < 0 or y >= city_surface.get_height():
+        return False
+    return city_surface.get_at((int(x), int(y))).a > 0
+
+def explode_at(city_surface, x, y, radius=explode_radius):
+    # A "mask" surface the size of the explosion area
+    mask = pygame.Surface((radius * 2, radius * 2), pygame.SRCALPHA).convert_alpha()
+
+    # Start fully opaque (so outside the circle does nothing)
+    mask.fill((255, 255, 255, 255))
+
+    # Draw a transparent circle (this is the part that will erase)
+    pygame.draw.circle(mask, (255, 255, 255, 0), (radius, radius), radius)
+
+    # Multiply destination by mask: inside circle alpha->0, outside stays same
+    city_surface.blit(mask, (x - radius, y - radius), special_flags=pygame.BLEND_RGBA_MULT)
+
+def spawn_explosion(x, y):
+    explosions.append({"x": int(x), "y": int(y), "t": 0.0})
+
 
 # ---------- World generation ----------
 def generate_skyline():
@@ -174,6 +208,7 @@ def place_gorillas(buildings):
 
 # ---------- Game state ----------
 buildings = generate_skyline()
+city_surface = build_city_surface(buildings, screen_w, screen_h)
 gorilla_1, gorilla_2 = place_gorillas(buildings)
 
 turn = 0  # 0 -> P1, 1 -> P2
@@ -187,11 +222,15 @@ banana = None  # dict with x,y,vx,vy,r
 message = ""   # winner / miss messages
 message_timer = 0.0
 
+explosions = []  # each: {"x": int, "y": int, "t": float}
+
+
 def reset_round(new_winner_msg=""):
-    global background
+    global background, buildings, gorilla_1, gorilla_2, city_surface
     background = make_background(screen_w, screen_h, seed=random.randint(1, 999999))
     global buildings, gorilla_1, gorilla_2, turn, phase, typed, angle_deg, speed, banana, message, message_timer
     buildings = generate_skyline()
+    city_surface = build_city_surface(buildings, screen_w, screen_h)
     gorilla_1, gorilla_2 = place_gorillas(buildings)
     turn = 0
     phase = "angle"
@@ -234,12 +273,16 @@ def launch_banana(a_deg, v):
     spawn_x = shooter["rect"].centerx
     spawn_y = shooter["rect"].top + shooter["rect"].height * 0.35
 
+    spin_deg_per_sec = 720.0  # 2 rotations per second
+
     banana = {
         "x": float(spawn_x),
         "y": float(spawn_y),
         "vx": vx,
         "vy": vy,
         "r": banana_radius,
+        "angle": 0.0,
+        "spin": spin_deg_per_sec,
     }
 
 # ---------- Main loop ----------
@@ -252,6 +295,12 @@ while running:
         message_timer -= dt
         if message_timer <= 0:
             message = ""
+
+    # update explosions
+    for e in explosions[:]:
+        e["t"] += dt
+        if e["t"] > explosion_time:  # lifetime in seconds
+            explosions.remove(e)
 
     # ----- Events -----
     for event in pygame.event.get():
@@ -299,6 +348,8 @@ while running:
         banana["vy"] += gravity * dt
         banana["x"] += banana["vx"] * dt
         banana["y"] += banana["vy"] * dt
+        banana["angle"] = (banana["angle"] + banana["spin"] * dt) % 360.0
+
 
         bx, by, br = banana["x"], banana["y"], banana["r"]
 
@@ -307,12 +358,9 @@ while running:
             end_turn("Miss!")
         else:
             # building collision
-            hit_building = False
-            for b in buildings:
-                if circle_rect_hit(bx, by, br, b):
-                    hit_building = True
-                    break
-            if hit_building:
+            if city_solid_at(city_surface, bx, by):
+                spawn_explosion(bx, by)
+                explode_at(city_surface, int(bx), int(by), radius=explode_radius)
                 end_turn("Boom!")
             else:
                 # gorilla hit (simple circle-circle)
@@ -325,9 +373,8 @@ while running:
     # ----- Draw -----
     screen.blit(background, (0, 0))
 
-    # buildings
-    for b in buildings:
-        pygame.draw.rect(screen, building_color, b)
+    # city
+    screen.blit(city_surface, (0, 0))
 
     # gorillas
     screen.blit(gorilla_1["img"], gorilla_1["rect"].topleft)
@@ -337,8 +384,27 @@ while running:
     if banana is not None and phase == "flying":
         x = int(banana["x"])
         y = int(banana["y"])
-        rect = banana_img.get_rect(center=(x, y))
-        screen.blit(banana_img, rect.topleft)
+        rotated = pygame.transform.rotate(banana_img, banana["angle"])
+        rect = rotated.get_rect(center=(x, y))
+        screen.blit(rotated, rect.topleft)
+
+    # draw explosions (expanding ring + flash)
+    for e in explosions:
+        t = e["t"] / explosion_time # normalized time (0.0 to 1.0)
+        r = int(6 + 40 * t)                # radius grows
+        a = int(220 * (1 - t))             # alpha fades
+
+        # ring
+        ring = pygame.Surface((r * 2 + 2, r * 2 + 2), pygame.SRCALPHA)
+        pygame.draw.circle(ring, (255, 220, 120, a), (r + 1, r + 1), r, 3)
+        screen.blit(ring, (e["x"] - r - 1, e["y"] - r - 1))
+
+        # quick inner flash
+        if t < 0.2:
+            fr = int(10 * (1 - t / 0.2))
+            flash = pygame.Surface((fr * 2 + 2, fr * 2 + 2), pygame.SRCALPHA)
+            pygame.draw.circle(flash, (255, 255, 255, int(a * 0.8)), (fr + 1, fr + 1), fr)
+            screen.blit(flash, (e["x"] - fr - 1, e["y"] - fr - 1))
 
     # HUD / prompt
     p = current_player()
