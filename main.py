@@ -107,6 +107,8 @@ font = pygame.font.SysFont(None, 28)
 big_font = pygame.font.SysFont(None, 44)
 background = make_background(screen_w, screen_h, seed=42)
 
+angle_min, angle_max = 0.0, 90.0
+speed_min, speed_max = 20.0, 800.0
 
 # ---------- Helpers ----------
 def draw_text(s, x, y, fnt=font, color=text_color):
@@ -212,17 +214,17 @@ city_surface = build_city_surface(buildings, screen_w, screen_h)
 gorilla_1, gorilla_2 = place_gorillas(buildings)
 
 turn = 0  # 0 -> P1, 1 -> P2
-phase = "angle"  # angle -> speed -> flying
-typed = ""       # current input buffer
+phase = "angle"
+typed = ""
 angle_deg = None
 speed = None
 
-banana = None  # dict with x,y,vx,vy,r
+banana = None
 
 message = ""   # winner / miss messages
 message_timer = 0.0
 
-explosions = []  # each: {"x": int, "y": int, "t": float}
+explosions = []
 
 
 def reset_round(new_winner_msg=""):
@@ -316,29 +318,42 @@ while running:
             if phase in ("angle", "speed"):
                 if event.key == pygame.K_BACKSPACE:
                     typed = typed[:-1]
+
                 elif event.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
                     if typed.strip() == "":
-                        continue
-                    try:
-                        val = float(typed)
-                    except ValueError:
                         typed = ""
                         continue
 
+                    try:
+                        val = float(typed)
+                    except ValueError:
+                        typed = ""  # clear invalid input
+                        continue    # stay in same phase
+
                     if phase == "angle":
-                        angle_deg = clamp(val, 0.0, 90.0)
+                        if not (angle_min <= val <= angle_max):
+                            typed = ""  # clear invalid input
+                            continue    # stay in angle phase
+                        angle_deg = val
                         phase = "speed"
                         typed = ""
-                    else:
-                        speed = clamp(val, 20.0, 800.0)
-                        # launch
+
+                    else:  # phase == "speed"
+                        if not (speed_min <= val <= speed_max):
+                            typed = ""  # clear invalid input
+                            continue    # stay in speed phase
+                        speed = val
                         launch_banana(angle_deg, speed)
                         phase = "flying"
                         typed = ""
                 else:
                     ch = event.unicode
-                    # allow digits, dot, minus (though we clamp later)
-                    if ch.isdigit() or ch in ".-":
+                    if len(typed) >= 16:  # limit input length to 16 chars
+                        continue
+
+                    if ch.isdigit():
+                        typed += ch
+                    elif ch == "." and "." not in typed:
                         typed += ch
 
     # ----- Update physics -----
@@ -363,12 +378,17 @@ while running:
                 explode_at(city_surface, int(bx), int(by), radius=explode_radius)
                 end_turn("Boom!")
             else:
-                # gorilla hit (simple circle-circle)
-                target = other_player()
-                if circle_rect_hit(bx, by, br, target["rect"]):
-                    winner = current_player()["name"]
-                    reset_round(f"{winner} wins!  (Press R to reroll)")
-                    message_timer = 2.5
+                # gorilla hit
+                shooter = current_player()
+                other = other_player()
+
+                hit_shooter = circle_rect_hit(bx, by, br, shooter["rect"])  # self destruct
+                hit_other   = circle_rect_hit(bx, by, br, other["rect"])    # hit opponent
+
+                if hit_shooter or hit_other:
+                    winner = other["name"] if hit_shooter else shooter["name"]
+                    reset_round(f"{winner} wins!")
+                    message_timer = 4.0
 
     # ----- Draw -----
     screen.blit(background, (0, 0))
