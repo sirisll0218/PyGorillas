@@ -66,7 +66,7 @@ def make_background(w, h, seed=1):
 pygame.init()
 
 
-# ---------- Config ----------
+# ---------------- CONFIG ---------------------------
 screen_w, screen_h = 900, 600
 fps = 60
 
@@ -111,7 +111,24 @@ background = make_background(screen_w, screen_h, seed=42)
 angle_min, angle_max = 0.0, 90.0
 speed_min, speed_max = 20.0, 800.0
 
-# ---------- Helpers ----------
+building_colors = [
+    (0x1B, 0x3A, 0x4B),  # 1B3A4B
+    (0x21, 0x2F, 0x45),  # 212F45
+    (0x27, 0x26, 0x40),  # 272640
+    (0x31, 0x22, 0x44),  # 312244
+    (0x3E, 0x1F, 0x47),  # 3E1F47
+]
+
+building_edge = (12, 18, 16)
+
+window_on = [(255, 211, 122), (255, 193, 90), (255, 224, 138)]
+window_off = [(26, 34, 44), (32, 40, 54)]
+window_w, window_h = 6, 9
+window_gap_x, window_gap_y = 6, 8
+window_margin_x, window_margin_y = 10, 14
+light_on_prob = 0.22
+
+# ---------------- HELPERS ---------------------------
 def draw_text(s, x, y, fnt=font, color=text_color):
     surf = fnt.render(s, True, color)
     screen.blit(surf, (x, y))
@@ -145,12 +162,56 @@ def circle_rect_hit(cx, cy, r, rect: pygame.Rect):
     dy = cy - closest_y
     return (dx*dx + dy*dy) <= r*r
 
-def build_city_surface(buildings, w, h):
+def build_city_surface(buildings, w, h, seed=951753):
+    rng = random.Random(seed)
+    
     # Per-pixel alpha surface (transparent background)
-    city = pygame.Surface((w, h), pygame.SRCALPHA)
+    city = pygame.Surface((w, h), pygame.SRCALPHA).convert_alpha()
+    city.fill((0, 0, 0, 0))  # fully transparent
     # Draw buildings onto it (opaque)
     for b in buildings:
-        pygame.draw.rect(city, (*building_color, 255), b)
+        base = list(rng.choice(building_colors))
+
+        # tiny per-building jitter so it isn't flat
+        jitter = rng.randint(-5, 5)
+        base = [max(0, min(255, c + jitter)) for c in base]
+        base_color = (*base, 255)
+
+        # Draw building body
+        pygame.draw.rect(city, base_color, b)
+        # Subtle right-side shadow for depth
+        shade_w = max(2, b.width // 12)
+        shade_rect = pygame.Rect(b.right - shade_w, b.top, shade_w, b.height)
+        pygame.draw.rect(city, (*building_edge, 255), shade_rect)
+        # Subtle outline
+        pygame.draw.rect(city, (*building_edge, 255), b, 1)
+
+        # Add windows
+        gap_x = window_gap_x + rng.randint(-1, 2)
+        gap_y = window_gap_y + rng.randint(-1, 2)
+
+        light_prob = light_on_prob + rng.uniform(-0.08, 0.08)
+        light_prob = max(0.05, min(0.65, light_prob))
+        # occasional "mostly dark" building
+        if rng.random() < 0.12:
+            light_prob *= 0.35
+
+        x0 = b.left + window_margin_x
+        x1 = b.right - window_margin_x - window_w
+        y0 = b.top + window_margin_y
+        y1 = b.bottom - window_margin_y - window_h
+
+        for yy in range(y0, y1 + 1, window_h + gap_y):
+            for xx in range(x0, x1 + 1, window_w + gap_x):
+                if rng.random() < light_prob:
+                    col = rng.choice(window_on)
+                    a = 235  # slightly translucent gives a softer look
+                else:
+                    col = rng.choice(window_off)
+                    a = 255
+
+                pygame.draw.rect(city, (*col, a), (xx, yy, window_w, window_h))
+
     return city
 
 def city_solid_at(city_surface, x, y):
@@ -204,7 +265,7 @@ def has_throw_clearance(buildings, i, side, clearance_px=160, wall_margin=35):
 
 
 
-# ---------- World generation ----------
+# ---------------- WORLD GENERATION ---------------------------
 def generate_skyline():
     buildings = []
     x = 0
@@ -258,7 +319,7 @@ def place_gorillas(buildings):
     return gorilla_1, gorilla_2
 
 
-# ---------- Game state ----------
+# ---------------- GAME STATE ---------------------------
 buildings = generate_skyline()
 city_surface = build_city_surface(buildings, screen_w, screen_h)
 gorilla_1, gorilla_2 = place_gorillas(buildings)
@@ -338,7 +399,7 @@ def launch_banana(a_deg, v):
         "age": 0.0,
     }
 
-# ---------- Main loop ----------
+# ---------------- MAIN LOOP ---------------------------
 running = True
 while running:
     dt = clock.tick(fps) / 1000.0
@@ -355,7 +416,7 @@ while running:
         if e["t"] > explosion_time:  # lifetime in seconds
             explosions.remove(e)
 
-    # ----- Events -----
+    # -------- EVENTS -------------
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
             running = False
@@ -407,7 +468,7 @@ while running:
                     elif ch == "." and "." not in typed:
                         typed += ch
 
-    # ----- Update physics -----
+    # -------- UPDATE PHYSICS -------------
     if phase == "flying" and banana is not None:
         # integrate
         banana["vx"] += wind_ax * dt
@@ -446,7 +507,7 @@ while running:
                     reset_round(f"{winner} wins!")
                     message_timer = 4.0
 
-    # ----- Draw -----
+    # -------- DRAW -------------
     screen.blit(background, (0, 0))
 
     # city
