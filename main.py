@@ -129,9 +129,18 @@ window_margin_x, window_margin_y = 10, 14
 light_on_prob = 0.22
 
 # ---------------- HELPERS ---------------------------
-def draw_text(s, x, y, fnt=font, color=text_color):
+def draw_text(s, x, y, fnt=font, color=text_color, anchor="topleft"):
     surf = fnt.render(s, True, color)
-    screen.blit(surf, (x, y))
+    rect = surf.get_rect()
+
+    if anchor == "topleft":
+        rect.topleft = (x, y)
+    elif anchor == "topright":
+        rect.topright = (x, y)
+    else:
+        rect.topleft = (x, y)
+
+    screen.blit(surf, rect)
 
 def clamp(v, lo, hi):
     return max(lo, min(hi, v))
@@ -545,12 +554,16 @@ while running:
 
     # HUD / prompt
     p = current_player()
-    draw_text(f"Turn: {p['name']}   (R = reroll city)", 12, 10)
+    margin = 12
+    anchor = "topleft" if p["name"] == "P1" else "topright"
+    x = margin if anchor == "topleft" else (screen_w - margin)
+
+    draw_text(f"Turn: {p['name']}   (R = reroll city)", x, 10, anchor=anchor)
 
     if phase == "angle":
-        draw_text("Enter ANGLE (0–90): " + typed, 12, 40)
+        draw_text("Angle (0–90): " + typed, x, 40, anchor=anchor)
     elif phase == "speed":
-        draw_text("Enter VELOCITY (20–800): " + typed, 12, 40)
+        draw_text("Velocity (20–800): " + typed, x, 40, anchor=anchor)
 
     if message:
         # centered big message
