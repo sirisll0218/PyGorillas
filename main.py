@@ -65,6 +65,7 @@ def make_background(w, h, seed=1):
 
 pygame.init()
 
+
 # ---------- Config ----------
 screen_w, screen_h = 900, 600
 fps = 60
@@ -119,17 +120,22 @@ def clamp(v, lo, hi):
     return max(lo, min(hi, v))
 
 def pick_rooftop(buildings, side):
-    # side: "left" or "right"
     n = len(buildings)
-    if n < 6:
-        idxs = range(n)
+    if side == "left":
+        idxs = list(range(1, max(2, n // 3)))
     else:
-        if side == "left":
-            idxs = range(1, max(2, n // 3))
-        else:
-            idxs = range(min(n - 2, 2 * n // 3), n - 1)
-    i = random.choice(list(idxs))
-    return buildings[i]
+        idxs = list(range(min(n - 2, 2 * n // 3), n - 1))
+
+    # keep only rooftops with clearance in throw direction
+    candidates = [i for i in idxs if has_throw_clearance(buildings, i, side)]
+
+    if candidates:
+        return buildings[random.choice(candidates)]
+
+    # fallback: if none pass, just pick the highest roofs in that region
+    idxs_sorted = sorted(idxs, key=lambda i: buildings[i].top)
+    return buildings[random.choice(idxs_sorted[:max(1, len(idxs_sorted)//5)])]
+
 
 def circle_rect_hit(cx, cy, r, rect: pygame.Rect):
     # classic circle-rect collision
@@ -169,17 +175,45 @@ def explode_at(city_surface, x, y, radius=explode_radius):
 def spawn_explosion(x, y):
     explosions.append({"x": int(x), "y": int(y), "t": 0.0})
 
+def has_throw_clearance(buildings, i, side, clearance_px=160, wall_margin=35):
+    """
+    side: "left" means player on left throws RIGHT
+          "right" means player on right throws LEFT
+    Reject if there's a much taller roof close in the throw direction.
+    """
+    b = buildings[i]
+    roof_y = b.top  # smaller y = higher roof
+    x0 = b.centerx
+
+    direction = 1 if side == "left" else -1
+
+    for j, nb in enumerate(buildings):
+        if j == i:
+            continue
+        dx = nb.centerx - x0
+        if direction * dx <= 0:   # only check forward direction
+            continue
+        if abs(dx) > clearance_px:
+            continue
+
+        # if neighbor roof is significantly higher (smaller y), it is a wall
+        if nb.top < roof_y - wall_margin:
+            return False
+
+    return True
+
+
 
 # ---------- World generation ----------
 def generate_skyline():
     buildings = []
     x = 0
     # building width and height ranges
-    bw_min, bw_max = 50, 110
+    bw_min, bw_max = 70, 140
     bh_min, bh_max = 180, 360
     bh = random.randint(bh_min, bh_max)
-    step = 45
-    step_bias = 0.15
+    step = 40
+    step_bias = 0.05
 
     while x < screen_w:
         bw = random.randint(bw_min, bw_max)
