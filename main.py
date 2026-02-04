@@ -174,9 +174,25 @@ def spawn_explosion(x, y):
 def generate_skyline():
     buildings = []
     x = 0
+    # building width and height ranges
+    bw_min, bw_max = 50, 110
+    bh_min, bh_max = 180, 360
+    bh = random.randint(bh_min, bh_max)
+    step = 45
+    step_bias = 0.15
+
     while x < screen_w:
-        bw = random.randint(30, 70)
-        bh = random.randint(120, 420)
+        bw = random.randint(bw_min, bw_max)
+
+        mid = (bh_min + bh_max) / 2
+        drift = (mid - bh) * step_bias
+        dh = random.randint(-step, step) + int(drift)
+
+        bh = int(clamp(bh + dh, bh_min, bh_max)) 
+        bh = random.randint(bh_min, bh_max)
+        dh = random.randint(-step, step) + int(drift)
+        bh = int(clamp(bh + dh, bh_min, bh_max))
+
         rect = pygame.Rect(x, screen_h - bh, bw, bh)
         buildings.append(rect)
         x += bw
@@ -285,6 +301,7 @@ def launch_banana(a_deg, v):
         "r": banana_radius,
         "angle": 0.0,
         "spin": spin_deg_per_sec,
+        "age": 0.0,
     }
 
 # ---------- Main loop ----------
@@ -364,6 +381,7 @@ while running:
         banana["x"] += banana["vx"] * dt
         banana["y"] += banana["vy"] * dt
         banana["angle"] = (banana["angle"] + banana["spin"] * dt) % 360.0
+        banana["age"] += dt
 
 
         bx, by, br = banana["x"], banana["y"], banana["r"]
@@ -382,8 +400,12 @@ while running:
                 shooter = current_player()
                 other = other_player()
 
-                hit_shooter = circle_rect_hit(bx, by, br, shooter["rect"])  # self destruct
                 hit_other   = circle_rect_hit(bx, by, br, other["rect"])    # hit opponent
+
+                self_destruct_grace = 0.15 # no instant SD
+                hit_shooter = False
+                if banana["age"] > self_destruct_grace:
+                    hit_shooter = circle_rect_hit(bx, by, br, shooter["rect"])  # hit self
 
                 if hit_shooter or hit_other:
                     winner = other["name"] if hit_shooter else shooter["name"]
