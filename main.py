@@ -86,21 +86,28 @@ pygame.display.set_caption("PyGorillas")
 pygame.display.set_icon(pygame.image.load(resource_path("assets/gorilla1.png")).convert_alpha())
 
 gorilla_img = pygame.image.load(resource_path("assets/gorilla1.png")).convert_alpha()
+throw_img = pygame.image.load(resource_path("assets/throw_sprite.png")).convert_alpha()
+
 gorilla_scale = 0.2
 gorilla_img = pygame.transform.scale(
-    gorilla_img, (gorilla_img.get_width() * gorilla_scale, gorilla_img.get_height() * gorilla_scale)  
+    gorilla_img, (gorilla_img.get_width() * gorilla_scale, gorilla_img.get_height() * gorilla_scale)
+)
+throw_img = pygame.transform.scale(
+    throw_img, (throw_img.get_width() * gorilla_scale, throw_img.get_height() * gorilla_scale)
 )
 gorilla_img_1 = gorilla_img
+throw_img_1 = throw_img
 gorilla_img_2 = pygame.transform.flip(gorilla_img, True, False)
+throw_img_2 = pygame.transform.flip(throw_img, True, False)
 
 banana_img  = pygame.image.load(resource_path("assets/banana1.png")).convert_alpha()
-banana_scale = 1.0  # try 0.5 if it's big
+banana_scale = 1.0
 banana_img = pygame.transform.scale(
     banana_img,
     (int(banana_img.get_width() * banana_scale), int(banana_img.get_height() * banana_scale))
 )
 banana_radius = max(2, min(banana_img.get_width(), banana_img.get_height()) // 3)
-explode_radius = 12
+explode_radius = 10
 explosion_time = 0.2
 
 clock = pygame.time.Clock()
@@ -272,6 +279,12 @@ def has_throw_clearance(buildings, i, side, clearance_px=160, wall_margin=35):
 
     return True
 
+def gorilla_draw_rect(g):
+    """Return the rect to blit for current frame, anchored to the hitbox midbottom."""
+    img = g["throw"] if g["throw_timer"] > 0 else g["stand"]
+    r = img.get_rect()
+    r.midbottom = g["rect"].midbottom
+    return img, r
 
 
 # ---------------- WORLD GENERATION ---------------------------
@@ -282,7 +295,7 @@ def generate_skyline():
     bw_min, bw_max = 70, 140
     bh_min, bh_max = 180, 360
     bh = random.randint(bh_min, bh_max)
-    step = 40
+    step = 44
     step_bias = 0.05
 
     while x < screen_w:
@@ -312,17 +325,17 @@ def place_gorillas(buildings):
     gorilla_2_rect = gorilla_img_2.get_rect()
     gorilla_2_rect.midbottom = (right_b.centerx, right_b.top)
     gorilla_1 = {
-        "x": gorilla_1_rect.centerx,
-        "y": gorilla_1_rect.centery,
-        "img": gorilla_img_1,
         "rect": gorilla_1_rect,
+        "stand": gorilla_img_1,
+        "throw": throw_img_1,
+        "throw_timer": 0.0,        
         "name": "P1",
     }
     gorilla_2 = {
-        "x": gorilla_2_rect.centerx,
-        "y": gorilla_2_rect.centery,
-        "img": gorilla_img_2,
         "rect": gorilla_2_rect,
+        "stand": gorilla_img_2,
+        "throw": throw_img_2,
+        "throw_timer": 0.0,        
         "name": "P2",
     }
     return gorilla_1, gorilla_2
@@ -418,6 +431,11 @@ while running:
         message_timer -= dt
         if message_timer <= 0:
             message = ""
+    
+    for g in (gorilla_1, gorilla_2):
+        if g["throw_timer"] > 0:
+            g["throw_timer"] = max(0.0, g["throw_timer"] - dt)
+
 
     # update explosions
     for e in explosions[:]:
@@ -466,6 +484,7 @@ while running:
                         speed = val
                         launch_banana(angle_deg, speed)
                         phase = "flying"
+                        current_player()["throw_timer"] = 1.0  # throw animation timer
                         typed = ""
                 else:
                     ch = event.unicode
@@ -506,7 +525,7 @@ while running:
 
                 hit_other   = circle_rect_hit(bx, by, br, other["rect"])    # hit opponent
 
-                self_destruct_grace = 0.15 # no instant SD
+                self_destruct_grace = 0.4 # no instant SD
                 hit_shooter = False
                 if banana["age"] > self_destruct_grace:
                     hit_shooter = circle_rect_hit(bx, by, br, shooter["rect"])  # hit self
@@ -523,8 +542,12 @@ while running:
     screen.blit(city_surface, (0, 0))
 
     # gorillas
-    screen.blit(gorilla_1["img"], gorilla_1["rect"].topleft)
-    screen.blit(gorilla_2["img"], gorilla_2["rect"].topleft)
+    img, r = gorilla_draw_rect(gorilla_1)
+    screen.blit(img, r.topleft)
+
+    img, r = gorilla_draw_rect(gorilla_2)
+    screen.blit(img, r.topleft)
+
 
     # banana
     if banana is not None and phase == "flying":
@@ -537,7 +560,7 @@ while running:
     # draw explosions (expanding ring + flash)
     for e in explosions:
         t = e["t"] / explosion_time # normalized time (0.0 to 1.0)
-        r = int(6 + 40 * t)                # radius grows
+        r = int(6 + 36 * t)                # radius grows
         a = int(220 * (1 - t))             # alpha fades
 
         # ring

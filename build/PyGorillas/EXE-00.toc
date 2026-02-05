@@ -70,7 +70,7 @@
  [],
  False,
  False,
- 1770179366,
+ 1770325271,
  [('runw.exe',
    'C:\\Users\\siris\\Desktop\\Python_projects\\PyGorillas\\.venv\\Lib\\site-packages\\PyInstaller\\bootloader\\Windows-64bit-intel\\runw.exe',
    'EXECUTABLE')],
